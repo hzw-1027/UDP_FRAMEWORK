@@ -42,13 +42,83 @@ typedef struct {
     uint8_t payload[6];        // 消息内容,固定为6字节，不足6字节的消息使用0填充
 } Message;
 
+// 数据包节点结构
+typedef struct PacketNode {
+    Message msg;          // 数据包信息
+    struct PacketNode* next;    // 下一个节点指针
+} PacketNode;
+
+// 线程安全的数据包队列
+typedef struct {
+    PacketNode* head;           // 队列头指针
+    PacketNode* tail;           // 队列尾指针
+    int count;                  // 队列中元素数量
+    pthread_mutex_t lock;       // 队列操作互斥锁
+} PacketQueue;
+
+//用于线程同步去重的数据结构
+typedef struct {
+    uint32_t last_processed_seq;  // 最后处理的序列号
+    time_t last_processed_time;   // 最后处理的时间
+    pthread_mutex_t mutex;        // 互斥锁
+    pthread_cond_t cond_var;      // 条件变量
+    PacketQueue packet_queue;     // 数据包队列
+} SharedData;
+
+/*
+以下为线程安全队列功能函数
+*/
+/*
+ * @param queue 要初始化的队列指针
+ * @return 成功返回0，失败返回错误码
+ */
+int init_packet_queue(PacketQueue* queue);//2
+
+/*
+ * 将数据包加入队列
+ * @param queue 目标队列
+ * @param packet 要加入的数据包
+ * @return 成功返回0，失败返回错误码
+ */
+int enqueue_packet(PacketQueue* queue, Message msg);//2
+
+/**
+ * 从队列中取出一个数据包
+ * @param queue 源队列
+ * @param packet 存储取出的数据包
+ * @return 成功返回0，队列为空返回-1
+ */
+int dequeue_packet(PacketQueue* queue, Message msg);//2
+
+/**
+ * 检查队列是否为空
+ * @param queue 要检查的队列
+ * @return 队列为空返回1，否则返回0
+ */
+int is_queue_empty(PacketQueue* queue);//2
+
+/**
+ * 获取队列中的所有数据包并清空队列
+ * @param queue 源队列
+ * @return 包含所有数据包的链表头指针
+ */
+PacketNode* get_all_packets(PacketQueue* queue);//2
+
+/**
+ * 释放数据包链表
+ * @param head 链表头指针
+ */
+void free_packet_list(PacketNode* head);//2
+
+
+
 /**
  * @brief 从配置文件加载配置信息并校验参数合法性
  * @param config 用于存储加载的配置信息
  * @param aes_key 用于存储AES-GCM加密所需的密钥
  * @return 成功返回0，失败返回-1
  */
-int init_network(Config* config, uint8_t aes_key[32]);
+int init_network(Config* config, uint8_t aes_key[32]);//1
 
 /**
  * @brief 从UKEY读取密钥，公司实现
@@ -63,7 +133,7 @@ int get_aes_key(uint8_t aes_key[32]);
  * @param config 用于存储加载的配置信息
  * @return 成功返回0，失败返回-1
  */
-int load_config(const char* filename, Config* config);
+int load_config(const char* filename, Config* config);//1
 
 /**
  * @brief 验证配置信息的有效性，包括IP地址格式、端口号范围等
@@ -75,7 +145,7 @@ int load_config(const char* filename, Config* config);
  * @param config 待验证的配置信息
  * @return 配置有效返回0，无效返回-1
  */
-int validate_config(const Config* config);
+int validate_config(const Config* config);//1
 
 
 /**
@@ -89,16 +159,9 @@ int validate_config(const Config* config);
  * @param msg 用于储存封装后的明文消息
  * @return 成功返回0，失败返回-1
  */
-int pack_message(MessageType message_type,uint8_t direction,uint32_t sequence_number, uint64_t timestamp, uint32_t validity, const uint8_t* payload, Message* msg);
+int pack_message(MessageType message_type,uint8_t direction,uint32_t sequence_number, uint64_t timestamp, uint32_t validity, const uint8_t* payload, Message* msg);//1
 
-/**
- * @brief 解析消息
- * @param buf 待解析的字节流缓冲区
- * @param buf_len 缓冲区长度
- * @param msg 用于接收解析后的消息结构体
- * @return 成功返回0，失败返回-1
- */
-int parse_message(const uint8_t* buf, size_t buf_len, Message* msg);
+
 
 /**
  * @brief 拧钥匙后，判断用户是否经过授权。等待公司接口

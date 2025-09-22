@@ -3,22 +3,6 @@
 
 #include "common.h"
 
-typedef struct {
-    Message* messages;        // 数据包数组 - 存储实际数据的环形缓冲区
-    int capacity;           // 队列容量 - 队列最大能容纳的数据包数量
-    int size;              // 当前大小 - 队列中当前存在的数据包数量
-    int front;             // 队首索引 - 下一个要出队的数据包位置
-    int rear;              // 队尾索引 - 下一个要入队的数据包位置
-    pthread_mutex_t mutex; // 互斥锁 - 保护队列操作的线程安全
-    pthread_cond_t cond;   // 条件变量 - 用于线程间同步和等待
-} ThreadSafeQueue;         //定义线程安全队列
-
-// 队列操作函数
-ThreadSafeQueue* create_queue(int capacity);//创建队列
-void destroy_queue(ThreadSafeQueue* queue);//销毁队列
-int enqueue(ThreadSafeQueue* queue, const Message* message);//入队
-int dequeue(ThreadSafeQueue* queue, Message* message, int timeout_ms);//出队，message用于保存待处理的数据包，timeout_ms为等待时间，单位毫秒，-1表示无限等待
-int queue_size(ThreadSafeQueue* queue);//获取队列大小
 
 /*
 以下为序列号管理功能函数
@@ -29,7 +13,7 @@ int queue_size(ThreadSafeQueue* queue);//获取队列大小
  * @param msg 指向Message结构体的指针，包含要发送的消息
  * @return 返回心跳序列号
  */
-int get_heartbeat_seq();
+int get_heartbeat_seq();//2
 
 /**
  * @brief 用于维护指令序列号，每次调用返回循环递增的序列号，范围0x0000至0xFFFF（65535）
@@ -37,7 +21,7 @@ int get_heartbeat_seq();
  * @param msg 指向Message结构体的指针，包含要发送的消息
  * @return 返回指令序列号
  */
-int get_CMD_seq();
+int get_CMD_seq();//2
 
 /**
  * @brief 用于维护ACK序列号，每次调用返回循环递增的序列号，范围0x0000至0xFFFF（65535）
@@ -45,61 +29,73 @@ int get_CMD_seq();
  * @param msg 指向Message结构体的指针，包含要发送的消息
  * @return 成功ACK序列号
  */
-int get_ACK_seq();
+int get_ACK_seq();//2
 
 /**
  * @brief 根据时间戳和有效期验证消息的有效性，根据序列号判断是否重复消息（去重）
  * @param msg 指向待验证Message结构体的指针
  * @return 合法返回true，否则返回false
  */
-bool is_valid_message(const Message* msg);
+bool is_valid_message(const Message* msg);//2
 
 /**
- * @brief controlled将加密后的密文通过UDP从四条路径发送出去（IP3->IP1;IP3->IP2;IP4->IP1;IP4->IP2;output_port->input_port）
+ * @brief controlled将加密后的密文通过UDP从四条路径发送出去（如果direction=1,则为IP3->IP1;IP3->IP2;IP4->IP1;IP4->IP2;output_port->input_port；direction=0则相反）
+ * @param direction 消息方向(1: Controller->Controlled, 0: Controlled->Controller)
  * @param data 指向加密后数据的指针，数据长度应为52字节
  * @param config 用于存储加载的配置信息
  * @return 成功返回0，失败返回-1
  */
-int controlled_redundant_send(const uint8_t* ciphertext, const Config* config);
+int redundant_send(uint8_t direction, const uint8_t* ciphertext, const Config* config);//2
 
 /**
- * @brief controller将加密后的指令密文通过UDP从四条路径发送出去（IP1->IP3;IP1->IP4;IP2->IP3;IP2->IP4;output_port->input_port）
- *      发送成功后等待ACK消息，处理ack_queue队列，若在ack_timeout内未收到ACK则重传，重传次数不超过max_retry_count
- * @param data 指向加密后数据的指针，数据长度应为52字节
+ * @brief 监听串口，逻辑判断，认证判断；通过后生成CMD消息，加密后调用redundant_send发送CMD，发送后等待条件变量唤醒，处理ACK队列，三秒内未收到ACK则重传，重传次数不超过max_retry_count
+ * 串口参数待补充
  * @param config 用于存储加载的配置信息
- * @return 成功返回0，失败返回-1
+ * @param ip_seq 用于标识当前使用的IP地址(主进程中需启动两个线程分别调用此函数，因此ip_seq取值分别为1和2，用于监听config中本机的第一个和第二个IP地址)
+ * @param aes_key[32] 用于存储AES-GCM加密所需的密钥
+ * @param sharedACK 用于存储ACK消息的线程同步数据结构
  */
-int controller_redundant_send(const uint8_t* ciphertext, const Config* config, ThreadSafeQueue* ack_queue);
-//这里加入heartbeat_queue参数，用于在等待ACK时处理心跳消息，但传入时是否会被锁，导致ACK消息无法入队？
-//另一思路是将等待ACK的逻辑放在controller_listen中，收到ACK后直接唤醒等待的线程
+void controller_serial_listen(const Config* config,int ip_seq, const uint8_t aes_key[32], SharedData* sharedACK);//4
+
+/**
+ * @brief 监听串口，生成heartbeat消息，加密后调用redundant_send发送
+ * 串口参数待补充
+ * @param config 用于存储加载的配置信息
+ * @param aes_key[32] 用于存储AES-GCM加密所需的密钥
+ */
+void controlled_serial_listen(const Config* config, const uint8_t aes_key[32]);//4
 
 
 /**
  * @brief controlled主线程循环执行，监听输入端口，接收来自Controller的控制指令，调用aes_gcm_decrypt解密并验证，调用is_valid_message判断合法性
- *      通过验证后调用controlled_redundant_send发送ACK消息,调用POWER_CUT/POWER_RESTORE执行控制指令
- * @param aes_key 用于存储AES-GCM加密所需的密钥
- */
-void controlled_listen(const Config* config, const uint8_t aes_key[32]);
-
-/**
- * @brief controlled主线程循环执行，监听输入端口，接收来自Controlled的ACK消息和心跳消息，调用aes_gcm_decrypt解密并验证，调用is_valid_message判断合法性
- *      通过验证后，将心跳消息和ACK消息分别放入两个线程安全队列中等待处理
+ *      通过验证后，加锁，入队，修改环境变量通知CMD处理线程，解锁 对调用controlled_redundant_send发送ACK消息,调用POWER_CUT/POWER_RESTORE执行控制指令
  * @param config 用于存储加载的配置信息
+ * @param ip_seq 用于标识当前使用的IP地址(主进程中需启动两个线程分别调用此函数，因此ip_seq取值分别为1和2，用于监听config中本机的第一个和第二个IP地址)
  * @param aes_key 用于存储AES-GCM加密所需的密钥
- * @param heartbeat_queue 用于存储心跳消息的线程安全队列
- * @param ack_queue 用于存储ACK消息的线程安全队列
+ * @param sharedCMD 用于存储CMD消息的线程同步数据结构
  */
-void controller_listen(const Config* config, const uint8_t aes_key[32], ThreadSafeQueue* heartbeat_queue, ThreadSafeQueue* ack_queue);
+void controlled_listen(const Config* config,int ip_seq, const uint8_t aes_key[32], SharedData* sharedCMD);//3
 
 /**
- * @brief 处理心跳信息的线程函数，从心跳队列中取出心跳消息，调用is_valid_message判断合法性
+ * @brief controller主线程循环执行，监听输入端口，接收来自Controlled的ACK消息和心跳消息，调用aes_gcm_decrypt解密并验证，调用is_valid_message判断合法性
+ *      通过验证后，将心跳消息和ACK消息分别放入SharedData中等待处理(要加锁解锁)
+ * @param config 用于存储加载的配置信息
+ * @param ip_seq 用于标识当前使用的IP地址(主进程中需启动两个线程分别调用此函数，因此ip_seq取值分别为1和2，用于监听config中本机的第一个和第二个IP地址)
+ * @param aes_key 用于存储AES-GCM加密所需的密钥
+ * @param sharedACK 用于存储ACK消息的线程同步数据结构
+ * @param sharedheartbeat 用于存储心跳消息的线程同步数据结构
+ */
+void controller_listen(const Config* config,int ip_seq, const uint8_t aes_key[32], SharedData* sharedACK, SharedData* sharedheartbeat);//3
+
+/**
+ * @brief 处理心跳信息的线程函数，从心跳队列中取出心跳消息，调用is_valid_message判断合法性,去重
  *      通过验证后， 1.监测链路状态。更新对应路径的最后心跳时间，如果目前时间-最后心跳时间超过heartbeat_warn则认为路径不可用,调用warning函数告警
  *                  2.更新被控端空开状态（这里是否要闪灯？是否要在前端展示？）
  *                  3.更新空开状态，调用updateLightColor控制闪灯
  * @param config 用于存储加载的配置信息
  * @param heartbeat_queue 用于存储心跳消息的线程安全队列
  */
-void heartbeat_manager(const Config* config, ThreadSafeQueue* heartbeat_queue);
+void controller_heartbeat_manager(const Config* config, SharedData* sharedheartbeat);//4
 
 
 
