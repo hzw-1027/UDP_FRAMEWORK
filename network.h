@@ -58,7 +58,7 @@ int redundant_send(uint8_t direction, const uint8_t* ciphertext, const Config* c
 void controller_serial_listen(const Config* config,int ip_seq, const uint8_t aes_key[32], SharedData* sharedACK);//4
 
 /**
- * @brief 监听串口，生成heartbeat消息，加密后调用redundant_send发送
+ * @brief 监听串口，判断是heartbeat消息还是IO-ACK消息，生成相应的数据包，加密后调用redundant_send发送
  * 串口参数待补充
  * @param config 用于存储加载的配置信息
  * @param aes_key[32] 用于存储AES-GCM加密所需的密钥
@@ -68,7 +68,7 @@ void controlled_serial_listen(const Config* config, const uint8_t aes_key[32]);/
 
 /**
  * @brief controlled主线程循环执行，监听输入端口，接收来自Controller的控制指令，调用aes_gcm_decrypt解密并验证，调用is_valid_message判断合法性
- *      通过验证后，加锁，入队，修改环境变量通知CMD处理线程，解锁 对调用controlled_redundant_send发送ACK消息,调用POWER_CUT/POWER_RESTORE执行控制指令
+ *      通过验证后，加锁，入队，修改环境变量通知CMD处理线程，解锁，调用POWER_CUT/POWER_RESTORE执行控制指令
  * @param config 用于存储加载的配置信息
  * @param ip_seq 用于标识当前使用的IP地址(主进程中需启动两个线程分别调用此函数，因此ip_seq取值分别为1和2，用于监听config中本机的第一个和第二个IP地址)
  * @param aes_key 用于存储AES-GCM加密所需的密钥
