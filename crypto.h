@@ -13,7 +13,7 @@
  *                   [36-51]: 16字节认证标签
  * @return 成功返回0，失败返回-1
  */
-int aes_gcm_encrypt(const Message* msg, const uint8_t* aes_key, uint8_t* ciphertext);
+int aes_gcm_encrypt(const Message* msg, const uint8_t* aes_key, uint8_t* ciphertext);//1
 
 /*
  * @brief AES-GCM解密函数，校验认证标签，通过后进行解密
@@ -22,7 +22,7 @@ int aes_gcm_encrypt(const Message* msg, const uint8_t* aes_key, uint8_t* ciphert
  * @param msg 输出参数，存放解密后的Message结构体
  * @return 成功返回0，认证失败返回-1，其他错误返回-2
  */
-int aes_gcm_decrypt(const uint8_t* ciphertext, const uint8_t* aes_key, Message* msg);
+int aes_gcm_decrypt(const uint8_t* ciphertext, const uint8_t* aes_key, Message* msg);//1
 
 
 #endif
