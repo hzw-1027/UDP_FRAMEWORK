@@ -45,6 +45,8 @@ typedef struct {
 // 数据包节点结构
 typedef struct PacketNode {
     Message msg;          // 数据包信息
+    int src_ip_seq;
+    int dest_ip_seq; 
     struct PacketNode* next;    // 下一个节点指针
 } PacketNode;
 
